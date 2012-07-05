@@ -15,6 +15,11 @@ from fuse import FUSE, Operations, LoggingMixIn
 
 from mercurial.dispatch import dispatch
 
+try:
+    from mercurial.dispatch import request
+except:
+    request = list
+
 class HgFS(LoggingMixIn, Operations):
     '''
     A Mercurial filesystem.
@@ -33,15 +38,15 @@ class HgFS(LoggingMixIn, Operations):
         self.tmp = os.path.abspath(tempfile.mkdtemp(prefix='hgfs-'))
         self.log.debug("Tmp: %s", self.tmp)
 
-        dispatch(['clone', self.repo, self.tmp])
+        dispatch(request(['clone', self.repo, self.tmp]))
 
         self.__load_attributes()
 
     def destroy(self, path):
         try:
-            dispatch(['--cwd', self.tmp, 'add', self.tmp])
-            dispatch(['--cwd', self.tmp, 'commit', '-m \"cruft\"'])
-            dispatch(['--cwd', self.tmp, 'push'])
+            dispatch(request(['--cwd', self.tmp, 'add', self.tmp]))
+            dispatch(request(['--cwd', self.tmp, 'commit', '-m \"cruft\"']))
+            dispatch(request(['--cwd', self.tmp, 'push']))
         finally:
             shutil.rmtree(self.tmp)
 
@@ -50,8 +55,8 @@ class HgFS(LoggingMixIn, Operations):
 
         try:
             os.mkdir(ahgfs)
-            dispatch(['--cwd', self.tmp, 'add', ahgfs])
-            dispatch(['--cwd', self.tmp, 'commit', '-m \"Adding .hgfs\"'])
+            dispatch(request(['--cwd', self.tmp, 'add', ahgfs]))
+            dispatch(request(['--cwd', self.tmp, 'commit', '-m \"Adding .hgfs\"']))
         except Exception, e:
             self.log.debug("Failed to create .hgfs.")
             pass
@@ -89,9 +94,9 @@ class HgFS(LoggingMixIn, Operations):
 
         ahgfs = os.path.join(self.tmp, '.hgfs')
 
-        dispatch(['--cwd', self.tmp, 'add', ahgfs])
-        dispatch(['--cwd', self.tmp, 'commit', '-m', msg])
-        dispatch(['--cwd', self.tmp, 'push'])
+        dispatch(request(['--cwd', self.tmp, 'add', ahgfs]))
+        dispatch(request(['--cwd', self.tmp, 'commit', '-m', msg]))
+        dispatch(request(['--cwd', self.tmp, 'push']))
 
     def chmod(self, path, mode):
         apath = os.path.join(self.tmp, path[1:])
@@ -115,9 +120,9 @@ class HgFS(LoggingMixIn, Operations):
         with open(apath, 'w+', mode) as f:
             pass
 
-        dispatch(['--cwd', self.tmp, 'add', apath])
-        dispatch(['--cwd', self.tmp, 'commit', '-m \"create: %s\"' % path[1:]])
-        dispatch(['--cwd', self.tmp, 'push'])
+        dispatch(request(['--cwd', self.tmp, 'add', apath]))
+        dispatch(request(['--cwd', self.tmp, 'commit', '-m \"create: %s\"' % path[1:]]))
+        dispatch(request(['--cwd', self.tmp, 'push']))
 
         return 0
 
@@ -131,7 +136,7 @@ class HgFS(LoggingMixIn, Operations):
         return os.mkdir(apath, mode)
 
     def read(self, path, size, offset, fh):
-        dispatch(['--cwd', self.tmp, 'pull', '-u'])
+        dispatch(request(['--cwd', self.tmp, 'pull', '-u']))
 
         apath = os.path.join(self.tmp, path[1:])
         with open(apath, 'r') as f:
@@ -157,18 +162,18 @@ class HgFS(LoggingMixIn, Operations):
         aold = os.path.join(self.tmp, old[1:])
         anew = os.path.join(self.tmp, new[1:])
 
-        dispatch(['--cwd', self.tmp, 'mv', aold, anew])
-        dispatch(['--cwd', self.tmp, 'commit', '-m \"rename: %s -> %s\"' % (old[1:], new[1:])])
-        dispatch(['--cwd', self.tmp, 'push'])
+        dispatch(request(['--cwd', self.tmp, 'mv', aold, anew]))
+        dispatch(request(['--cwd', self.tmp, 'commit', '-m \"rename: %s -> %s\"' % (old[1:], new[1:])]))
+        dispatch(request(['--cwd', self.tmp, 'push']))
 
         return 0
 
     def rmdir(self, path):
         apath = os.path.join(self.tmp, path[1:])
 
-        dispatch(['--cwd', self.tmp, 'rm', apath])
-        dispatch(['--cwd', self.tmp, 'commit', '-m \"rmdir: %s\"' % (path[1:])])
-        dispatch(['--cwd', self.tmp, 'push'])
+        dispatch(request(['--cwd', self.tmp, 'rm', apath]))
+        dispatch(request(['--cwd', self.tmp, 'commit', '-m \"rmdir: %s\"' % (path[1:])]))
+        dispatch(request(['--cwd', self.tmp, 'push']))
 
         return 0
 
@@ -176,31 +181,31 @@ class HgFS(LoggingMixIn, Operations):
         asource = os.path.join(self.tmp, source[1:])
         atarget = os.path.join(self.tmp, target[1:])
 
-        dispatch(['--cwd', self.tmp, 'add', asource])
-        dispatch(['--cwd', self.tmp, 'add', atarget])
-        dispatch(['--cwd', self.tmp, 'commit', '-m \"symlink: %s -> %s\"' % (source[1:], target[1:])])
-        dispatch(['--cwd', self.tmp, 'push'])
+        dispatch(request(['--cwd', self.tmp, 'add', asource]))
+        dispatch(request(['--cwd', self.tmp, 'add', atarget]))
+        dispatch(request(['--cwd', self.tmp, 'commit', '-m \"symlink: %s -> %s\"' % (source[1:], target[1:])]))
+        dispatch(request(['--cwd', self.tmp, 'push']))
 
         return os.symlink(asource, atarget)
 
     def truncate(self, path, length, fh=None):
         apath = os.path.join(self.tmp, path[1:])
         status = 0
-        with open(apath) as f:
+        with open(apath, 'r+') as f:
             status = f.truncate(length)
 
-        dispatch(['--cwd', self.tmp, 'add', apath])
-        dispatch(['--cwd', self.tmp, 'commit', '-m \"truncate: %s\"' % (path[1:])])
-        dispatch(['--cwd', self.tmp, 'push'])
+        dispatch(request(['--cwd', self.tmp, 'add', apath]))
+        dispatch(request(['--cwd', self.tmp, 'commit', '-m \"truncate: %s\"' % (path[1:])]))
+        dispatch(request(['--cwd', self.tmp, 'push']))
 
         return status
 
     def unlink(self, path):
         apath = os.path.join(self.tmp, path[1:])
 
-        dispatch(['--cwd', self.tmp, 'rm', apath])
-        dispatch(['--cwd', self.tmp, 'commit', '-m \"unlink: %s\"' % (path[1:])])
-        dispatch(['--cwd', self.tmp, 'push'])
+        dispatch(request(['--cwd', self.tmp, 'rm', apath]))
+        dispatch(request(['--cwd', self.tmp, 'commit', '-m \"unlink: %s\"' % (path[1:])]))
+        dispatch(request(['--cwd', self.tmp, 'push']))
 
         return 0
 
@@ -214,9 +219,9 @@ class HgFS(LoggingMixIn, Operations):
             f.seek(offset, 0)
             f.write(data)
 
-        dispatch(['--cwd', self.tmp, 'add', apath])
-        dispatch(['--cwd', self.tmp, 'commit', '-m \"write: %s\"' % (path[1:])])
-        dispatch(['--cwd', self.tmp, 'push'])
+        dispatch(request(['--cwd', self.tmp, 'add', apath]))
+        dispatch(request(['--cwd', self.tmp, 'commit', '-m \"write: %s\"' % (path[1:])]))
+        dispatch(request(['--cwd', self.tmp, 'push']))
 
         return len(data)
 
