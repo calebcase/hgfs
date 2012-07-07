@@ -1,12 +1,13 @@
 #!/usr/bin/env python
 
-import os
-import pwd
-import logging
-import tempfile
-import shutil
+import argparse
 import errno
 import json
+import logging
+import os
+import pwd
+import shutil
+import tempfile
 
 from sys import argv, exit
 from time import time
@@ -27,27 +28,35 @@ class HgFS(LoggingMixIn, Operations):
 
     ATTRS = ('st_uid', 'st_gid', 'st_mode', 'st_atime', 'st_mtime', 'st_size')
 
-    def __init__(self, repo, mountpoint='.'):
+    def __init__(self, repo, mountpoint='.', args={}):
         self.log.setLevel('DEBUG')
-        self.log.debug("repo: %s mountpoint: %s", repo, mountpoint)
+        self.log.debug("repo: %s mountpoint: %s args: %s", repo, mountpoint, repr(args))
 
         self.repo = repo
         self.mountpoint = os.path.abspath(mountpoint)
-        self.log.debug("SELF: repo: %s mountpoint: %s", self.repo, self.mountpoint)
+        self.args = args
 
-        self.tmp = os.path.abspath(tempfile.mkdtemp(prefix='hgfs-'))
+        if not self.args.clone:
+            self.repo = os.path.abspath(repo)
+
+        self.log.debug("SELF: repo: %s mountpoint: %s args: %s", self.repo, self.mountpoint, repr(self.args))
+
+        if self.args.clone:
+            self.tmp = os.path.abspath(tempfile.mkdtemp(prefix='hgfs-'))
+            dispatch(request(['clone', self.repo, self.tmp]))
+        else:
+            self.tmp = self.repo
+
         self.log.debug("Tmp: %s", self.tmp)
-
-        dispatch(request(['clone', self.repo, self.tmp]))
 
         self.__load_attributes()
 
     def destroy(self, path):
         try:
             dispatch(request(['--cwd', self.tmp, 'commit', '-A', '-m \"cruft\"']))
-            dispatch(request(['--cwd', self.tmp, 'push']))
+            if self.args.clone: dispatch(request(['--cwd', self.tmp, 'push']))
         finally:
-            shutil.rmtree(self.tmp)
+            if self.args.clone: shutil.rmtree(self.tmp)
 
     def __load_attributes(self):
         ahgfs = os.path.join(self.tmp, '.hgfs')
@@ -93,7 +102,7 @@ class HgFS(LoggingMixIn, Operations):
         ahgfs = os.path.join(self.tmp, '.hgfs')
 
         dispatch(request(['--cwd', self.tmp, 'commit', '-A', '-m', msg, '.hgfs', str(_path)]))
-        dispatch(request(['--cwd', self.tmp, 'push']))
+        if self.args.clone: dispatch(request(['--cwd', self.tmp, 'push']))
 
     def chmod(self, path, mode):
         _path = path[1:]
@@ -126,7 +135,7 @@ class HgFS(LoggingMixIn, Operations):
         return 0
 
     def getattr(self, path, fh=None):
-        dispatch(request(['--cwd', self.tmp, 'pull', '-u']))
+        if self.args.clone: dispatch(request(['--cwd', self.tmp, 'pull', '-u']))
 
         apath = os.path.join(self.tmp, path[1:])
         st = os.stat(apath)
@@ -143,7 +152,7 @@ class HgFS(LoggingMixIn, Operations):
         return status
 
     def read(self, path, size, offset, fh):
-        dispatch(request(['--cwd', self.tmp, 'pull', '-u']))
+        if self.args.clone: dispatch(request(['--cwd', self.tmp, 'pull', '-u']))
 
         apath = os.path.join(self.tmp, path[1:])
         with open(apath, 'r') as f:
@@ -151,7 +160,7 @@ class HgFS(LoggingMixIn, Operations):
         return data
 
     def readdir(self, path, fh):
-        dispatch(request(['--cwd', self.tmp, 'pull', '-u']))
+        if self.args.clone: dispatch(request(['--cwd', self.tmp, 'pull', '-u']))
 
         apath = os.path.join(self.tmp, path[1:])
         paths = os.listdir(apath)
@@ -164,7 +173,7 @@ class HgFS(LoggingMixIn, Operations):
         return clean
 
     def readlink(self, path):
-        dispatch(request(['--cwd', self.tmp, 'pull', '-u']))
+        if self.args.clone: dispatch(request(['--cwd', self.tmp, 'pull', '-u']))
 
         apath = os.path.join(self.tmp, path[1:])
         return os.readlink(apath)
@@ -176,7 +185,7 @@ class HgFS(LoggingMixIn, Operations):
         dispatch(request(['--cwd', self.tmp, 'mv', _old, _new]))
         dispatch(request(['--cwd', self.tmp, 'mv', os.path.join('.hgfs', _old + '.attr'), os.path.join('.hgfs', _new + '.attr')]))
         dispatch(request(['--cwd', self.tmp, 'commit', '-m', "rename: %s -> %s" % (_old, _new), str(_old), str(_new)]))
-        dispatch(request(['--cwd', self.tmp, 'push']))
+        if self.args.clone: dispatch(request(['--cwd', self.tmp, 'push']))
 
         return 0
 
@@ -199,7 +208,7 @@ class HgFS(LoggingMixIn, Operations):
             pass
 
         dispatch(request(['--cwd', self.tmp, 'commit', '-A', '-m', "rmdir: %s" % (_path), str(_path)]))
-        dispatch(request(['--cwd', self.tmp, 'push']))
+        if self.args.clone: dispatch(request(['--cwd', self.tmp, 'push']))
 
         return status
 
@@ -216,7 +225,7 @@ class HgFS(LoggingMixIn, Operations):
             pass
 
         dispatch(request(['--cwd', self.tmp, 'commit', '-A', '-m', "unlink: %s" % (_path), str(_path)]))
-        dispatch(request(['--cwd', self.tmp, 'push']))
+        if self.args.clone: dispatch(request(['--cwd', self.tmp, 'push']))
 
         return status
 
@@ -230,7 +239,7 @@ class HgFS(LoggingMixIn, Operations):
         status = os.symlink(source, atarget)
 
         dispatch(request(['--cwd', self.tmp, 'commit', '-A', '-m', "symlink: %s -> %s" % (source, _target), str(source), str(_target)]))
-        dispatch(request(['--cwd', self.tmp, 'push']))
+        if self.args.clone: dispatch(request(['--cwd', self.tmp, 'push']))
 
         return status
 
@@ -243,7 +252,7 @@ class HgFS(LoggingMixIn, Operations):
             status = f.truncate(length)
 
         dispatch(request(['--cwd', self.tmp, 'commit', '-A', '-m', "truncate: %s" % (_path), str(_path)]))
-        dispatch(request(['--cwd', self.tmp, 'push']))
+        if self.args.clone: dispatch(request(['--cwd', self.tmp, 'push']))
 
         return status
 
@@ -260,14 +269,21 @@ class HgFS(LoggingMixIn, Operations):
             f.write(data)
 
         dispatch(request(['--cwd', self.tmp, 'commit', '-A', '-m', "write: %s" % (_path), str(_path)]))
-        dispatch(request(['--cwd', self.tmp, 'push']))
+        if self.args.clone: dispatch(request(['--cwd', self.tmp, 'push']))
 
         return len(data)
 
 if __name__ == '__main__':
     logging.basicConfig()
-    if len(argv) != 3:
-        print('usage: %s <repo> <mountpoint>' % argv[0])
-        exit(1)
 
-    fuse = FUSE(HgFS(argv[1], argv[2]), argv[2], foreground=True, nothreads=True)
+    parser = argparse.ArgumentParser(description='HgFS')
+    parser.add_argument('repository', help='Mercurial repository specifier.')
+    parser.add_argument('mountpoint', help='Location of mount point.')
+
+    parser.add_argument('-c', '--clone', help='Clone repository. If set to false, then repository MUST be local.', action='store', default='True')
+
+    args = parser.parse_args()
+
+    args.clone = args.clone in ('True', 'true', '1')
+
+    fuse = FUSE(HgFS(args.repository, args.mountpoint, args), args.mountpoint, foreground=True, nothreads=True)
